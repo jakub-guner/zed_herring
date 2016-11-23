@@ -1,0 +1,25 @@
+---
+title: "Atrofia śledzia oceanicznego"
+author: "Jakub Guner"
+date: "23 Nov 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE)
+set.seed(92)
+```
+
+```{r listLibraries}
+library(dplyr)
+library(ggplot2)
+```
+
+```{r readData}
+herrings <-read.csv("sledzie.csv", na.strings = "?")
+```
+
+```{r plotLength, echo=FALSE}
+lengthPlot <- ggplot(herrings, aes(x=X, y=length)) + geom_smooth() + theme_light()
+plot(lengthPlot)
+```
