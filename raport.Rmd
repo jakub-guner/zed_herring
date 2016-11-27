@@ -2,24 +2,81 @@
 title: "Atrofia śledzia oceanicznego"
 author: "Jakub Guner"
 date: "23 Nov 2016"
-output: html_document
+output: 
+  html_document:
+    css: custom.css
+    toc: yes
 ---
-
+## Ustawienia
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, message = FALSE)
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, fig.align="center")
+Sys.setlocale("LC_CTYPE","pl_PL")
 set.seed(92)
 ```
 
-```{r listLibraries}
+```{r setupLocale, results='hide'}
+Sys.setlocale("LC_CTYPE","pl_PL")
+set.seed(92)
+```
+<!-- <div style="width:600px; height=400px"> -->
+<!-- ![Śledź oceaniczny (*Clupea harengus*), Źródło: Wikimedia](https://upload.wikimedia.org/wikipedia/commons/a/a6/Clupea_harengus_Gervais.jpg) -->
+<!-- </div> -->
+
+```{r listLibraries, message=FALSE, warning=FALSE, results='hide'}
 library(dplyr)
 library(ggplot2)
+library(knitr)
+library(VIM)
+library(lattice)
+library(mice)
 ```
+## Wstęp
 
 ```{r readData}
 herrings <-read.csv("sledzie.csv", na.strings = "?")
 ```
 
 ```{r plotLength, echo=FALSE}
-lengthPlot <- ggplot(herrings, aes(x=X, y=length)) + geom_smooth() + theme_light()
+lengthPlot <- ggplot(herrings, aes(x=X, y=length)) + 
+              geom_smooth() + 
+              theme_light() + 
+              xlab("Połów") + 
+              ylab("Długość śledzi [cm]")
 plot(lengthPlot)
+```
+
+## Brakujące dane
+
+Na żadnym atrybucie nie brakuje więcej niż 5% wartości, brak podstaw do odrzucenia czy ponownego pomiaru na którymkolwiek atrybucie.
+
+```{r percentageMissing}
+percentageMissing <- function(x){sum(is.na(x))/length(x)*100}
+kable(t(apply(herrings,2,percentageMissing)))
+```
+
+Brakujące wartości występują na siedmiu atrybutach. Rozkład losowy. Zdecydowaną większość stanowią wiersze w której brakuje tylko jednej wartości.
+
+```{r patternOfNAs, message=FALSE, warning=FALSE}
+aggr(herrings, col=c('green', 'red'), numbers=TRUE, sortVars=TRUE, labels=names(herrings), bars=TRUE, prop=FALSE, combined=TRUE, only.miss=TRUE, ylabs="Kombinacje brakujących wartości")
+```
+
+Imputujemy wartości przy użyciu pakietu MICE. Wykresy gęstości, oryginalne dane na niebiesko, wstawione na czerwono. Okazuje się, że w większości przypadków brakujące wartości pochodziły z wąskiego zakresu => brak wartości nie był przypadkowy i zaszedł w tylko w określonych warunkach połowu. 
+
+=> rozkłady są zbliżone tylko w małych przedziałach
+
+```{r fillingNAs, message=FALSE, warning=FALSE, cache=TRUE, results='hide'}
+imputedHerrings <- mice(herrings, m=1, method = "mean", seed= 29, print=FALSE)
+densityplot(imputedHerrings)
+```
+
+Tworzymy nową kolekcję danych, już uzupełnioną o brakujące wartości. Ostatnim etapem jest nadanie nowych, czytelnych nazw kolumnom.
+
+```{r completeHerringsDataset, message=FALSE, warning=FALSE, cache=TRUE}
+completeHerrings <- complete(imputedHerrings, 1)
+colnames(completeHerrings) <- c("Połów", "Długość", "Calanus finmarchicus gatunek 1", "Calanus finmarchicus gatunek 2", "Calanus helgolandicus gatunek 1", "Calanus helgolandicus gatunek 2","Widłonogi gatunek 1","Widłonogi gatunek 2","Żywy narybek w czasie połowu","Złowione śledzie w skali roku","Żywy narybek w skali roku","Złowione śledzie w czasie połowu", "Temperatura powierzchni oceanu [°C]", "Zasolenie wody [‰]", "Miesiąc", "NAO")
+```
+
+## Zbiór danych
+```{r splitDataset}
+kable(summary(completeHerrings))
 ```
