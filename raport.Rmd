@@ -8,6 +8,49 @@ output:
     toc_float: yes
     toc: yes
 ---
+
+
+```{r setupLocaleInit, results='hide', echo=FALSE}
+Sys.setlocale("LC_CTYPE","pl_PL")
+set.seed(92)
+```
+
+```{r listLibrariesInit, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+library(ggplot2)
+library(plotly)
+library(knitr)
+library(VIM)
+library(lattice)
+library(mice)
+library(reshape2)
+library(caret)
+```
+
+# Wprowadzenie
+Wielkość śledzia oceanicznego (*Clupea harengus*) uległa zmniejszeniu. Przez ostatnie 60 lat zmierzono długość ponad 50 tysięcy złowionych śledzi oraz zarejestrowano parametry ich naturalnego ekosystemu w momencie połowu. Poniższy, interaktywny wykres prezentuje zmiany wielkości śledzi w czasie.
+
+```{r readDataInit, echo=FALSE}
+herrings <-read.csv("sledzie.csv", na.strings = "?")
+```
+
+```{r plotLength, echo=FALSE, fig.align='center', warning=FALSE, message=FALSE}
+lengthPlot <- ggplot(herrings, aes(x=X, y=length)) + 
+              geom_smooth() + 
+              theme_light() + 
+              xlab("Połów") + 
+              ylab("Długość śledzi [cm]")
+ggplotly(lengthPlot)
+```
+
+
+Ten raport pokazuje, że temperatura powierzchni oceanu jest czynnikiem najbardziej, spośród dostępnych, skorelowanym z rozmiarem śledzia. Jest to korelacja negatywna, to znaczy, że przy rosnącej temperaturze długość śledzi maleje, a przy spadku temperatury następuje wzrost wielkości tych ryb.
+
+<div style="width:600px; height=400px">
+![Śledź oceaniczny (*Clupea harengus*), Źródło: Wikimedia](https://upload.wikimedia.org/wikipedia/commons/a/a6/Clupea_harengus_Gervais.jpg)
+</div>
+
+Wniosek ten został wyciągnięty po analizie dostępnego zbioru danych. Aż 20% rekordów z tego zbioru wymagało uzupełnienia brakujących danych. Aby zmniejszyć złożoność problemu, trzy atrybuty zostały usunięte ze względu na wysoką korelację z innymi parametrami.
+
 # Ustawienia
 ```{r setup, include=FALSE, echo=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, fig.align="center")
@@ -17,12 +60,8 @@ knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, fig.align="
 Sys.setlocale("LC_CTYPE","pl_PL")
 set.seed(92)
 ```
-<!-- <div style="width:600px; height=400px"> -->
-<!-- ![Śledź oceaniczny (*Clupea harengus*), Źródło: Wikimedia](https://upload.wikimedia.org/wikipedia/commons/a/a6/Clupea_harengus_Gervais.jpg) -->
-<!-- </div> -->
 
 ```{r listLibraries, message=FALSE, warning=FALSE, results='hide'}
-library(dplyr)
 library(ggplot2)
 library(plotly)
 library(knitr)
@@ -30,26 +69,18 @@ library(VIM)
 library(lattice)
 library(mice)
 library(reshape2)
+library(caret)
 ```
-# Wprowadzenie
 
+#Wstępne przetwarzanie danych
+##Wczytywanie danych
 ```{r readData}
 herrings <-read.csv("sledzie.csv", na.strings = "?")
 ```
 
-```{r plotLength, echo=FALSE, fig.align='center'}
-lengthPlot <- ggplot(herrings, aes(x=X, y=length)) + 
-              geom_smooth() + 
-              theme_light() + 
-              xlab("Połów") + 
-              ylab("Długość śledzi [cm]")
-ggplotly(lengthPlot)
-```
+##Brakujące wartości
 
-#Wstępne przetwarzanie danych
-##Brakujące dane
-
-Na żadnym atrybucie nie brakuje więcej niż 5% wartości, brak podstaw do odrzucenia czy ponownego pomiaru na którymkolwiek atrybucie.
+Zbiór danych posiada 16 atrybutów. Na żadnym z nich nie brakuje więcej niż 5% wartości. Oznacza to, że żaden z atrybutów nie musi zostać odrzucony ani nie wymaga ponownych pomiarów.
 
 ```{r percentageMissing, echo=FALSE}
 percentageMissing <- function(x){
@@ -59,7 +90,7 @@ percentageMissing <- function(x){
 kable(t(apply(herrings,2,percentageMissing)))
 ```
 
-Brakujące wartości występują na siedmiu atrybutach. Rozkład losowy. Zdecydowaną większość stanowią wiersze w której brakuje tylko jednej wartości.
+Poniższy wykres pokazuje częstość występowania obserwacji o określonej kombinacji brakujących wartości. Pola puste występują na siedmiu atrybutach. Prawie 80% zbioru stanowią kompletne wiersze. Następnie, najliczniejszą grupą są rekordy w których brakuje tylko jednej wartości. Przypadki gdy w danym wierszu brakuje dwóch lub trzech wartości stanowią zdecydowaną mniejszość.
 
 ```{r patternOfNAs, message=FALSE, warning=FALSE, echo=FALSE, results='hide'}
 aggr(herrings, col=c('green', 'red'), 
@@ -73,24 +104,27 @@ aggr(herrings, col=c('green', 'red'),
      ylabs="Kombinacje brakujących wartości")
 ```
 
-Imputujemy wartości przy użyciu pakietu MICE. Wykresy gęstości, oryginalne dane na niebiesko, wstawione na czerwono. Okazuje się, że w większości przypadków brakujące wartości pochodziły z wąskiego zakresu => brak wartości nie był przypadkowy i zaszedł w tylko w określonych warunkach połowu. 
-
-=> rozkłady są zbliżone tylko w małych przedziałach
+Brakujące wartości są uzupełniane techniką *Multivariate Imputation by Chained Equations* przy użyciu pakietu MICE.
 
 ```{r fillingNAs, message=FALSE, warning=FALSE, cache=TRUE, results='hide'}
 imputedHerrings <- mice(herrings, m=1, method = "mean", seed= 29, print=FALSE)
-densityplot(imputedHerrings)
+```
 
+Poniżej zaprezentowo wykresy gęstości wartości zmiennych. Oryginalne pomiary zilustrowano kolorem niebieskim; rozkład gęstości uzupełnionych danych przedstawiono na czerwono. Okazuje się, że w większości przypadków brakujące wartości pochodziły z wąskiego zakresu wartości oryginalnych pomiarów. Jest to przesłanka za tym, że wartości puste nie były przypadkowe i zaszły tylko w określonych warunkach połowu. 
+
+```{r fillingNAsDensity, echo=FALSE, message=FALSE, warning=FALSE, cache=TRUE, results='hide'}
+densityplot(imputedHerrings)
 ```
 
 
-Tworzymy nową kolekcję danych, już uzupełnioną o brakujące wartości. 
+Następnie utworzona zostaje nowa kolekcja danych, uzupełniona o brakujące wartości. 
+
 ```{r completeHerringsDataset, message=FALSE, warning=FALSE, cache=TRUE}
 completeHerrings <- complete(imputedHerrings, 1)
 ```
 
 ##Korelacje pomiędzy atrybutami
-Korelacja pearsona - defaultowa
+Istnieje niezerowe prawdopodobieństwo, że pomiędzy dostępnymi atrybutami istnieje korelacja. To znaczy obecność jednego atrybutu nie wnosi nowych informacji w obecności innego atrybutu. Taka nadmiarowość jest niepożądana z perspektywy planowanej regresji. Aby to sprawdzić stworzono macierz korelacji Pearsona pomiedzy każdą parą atrybutów.
 
 ```{r correlations, echo=FALSE, fig.width=7, fig.height=7}
 reorder_correlationMatrix <- function(matrix){
@@ -110,26 +144,19 @@ correlationMatrix <- reorder_correlationMatrix(correlationMatrix)
 upperTriangleMatrix <-get_lower_triangle(correlationMatrix)
 meltedCorrelation <- melt(upperTriangleMatrix)
 
-# ggplot(data = meltedCorrelation, aes(x=Var1, y=Var2, fill=value)) +
-#   scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0, limit = c(-1,1), 
-#                          space = "Lab", name="Pearson\nCorrelation") + 
-#   geom_text(aes(Var1, Var2, label = round(value, digits = 2)), color = "black", size = 3) + 
-#   theme_light() + 
-#   geom_tile(color="white") + 
-#   theme(axis.title.x = element_blank(), axis.title.y = element_blank()) 
-ggplot(data = meltedCorrelation, aes(x=Var1, y=Var2, fill=value)) + geom_tile(color="white") + scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0, limit = c(-1,1), space = "Lab", name="Pearson\nCorrelation") + theme_light() + theme(axis.title.x = element_blank(), axis.title.y = element_blank(), legend.position="top",legend.direction = "horizontal") + geom_text(aes(Var1, Var2, label = round(value, digits = 2)), color = "black", size = 3)
+ggplot(data = meltedCorrelation, aes(x=Var1, y=Var2, fill=value)) + geom_tile(color="white") + scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0, limit = c(-1,1), space = "Lab", name="Korelacja\nPearsona") + theme_light() + theme(axis.title.x = element_blank(), axis.title.y = element_blank(), legend.position="top",legend.direction = "horizontal") + geom_text(aes(Var1, Var2, label = round(value, digits = 2)), color = "black", size = 3)
   
 ```
 
-Na tej podstawie usuwamy chel1(lcop1), chel2 (silna korelacja z lcop2), fbar(cumf)
+Analiza macierzy pozwala usunąć trzy atrybuty: *chel1* (silna korelacja z *lcop1*), *chel2* (powiązanie z *lcop2*) oraz *fbar* (związek z *cumf*).
 
-##Nazwy atrybutów
 ```{r, removeCorrelatedColumns}
 completeHerrings <- subset(completeHerrings, select = -c(chel1,chel2, fbar))
 ```
 
+##Nazwy atrybutów
+
 Ostatnim etapem jest nadanie nowych, czytelnych nazw kolumnom.
-TODO: Remove names of removed columns
 ```{r newColumnNames, message=FALSE, warning=FALSE, cache=TRUE}
 colnames(completeHerrings) <- c("Połów", 
                                 "Długość", 
@@ -147,12 +174,8 @@ colnames(completeHerrings) <- c("Połów",
 ```
 
 # Zbiór danych
-Zbiór zawiera 52582 obserwacje. 13 zmiennych. 
-<!-- Przykładowe rokordy -->
-<!-- ```{r headCompleteHerrings, echo=FALSE} -->
-<!-- head(completeHerrings) -->
-<!-- ``` -->
-## Rozkład wartości atrybutów
+Ostatecznie, zbiór danych zawiera 52582 obserwacje oraz 13 zmiennych. Rozkład wartości tych zmiennych prezentują poniższe wykresy.
+
 ```{r attrDistri, fig.height=20, echo=FALSE}
 d <- melt(completeHerrings[-c(1)])
 ggplot(d, aes(x=value)) + 
@@ -162,3 +185,81 @@ ggplot(d, aes(x=value)) +
   xlab("Zmienna") +
   theme_light()
 ```
+
+#Regresja
+
+Celem regresji w tym raporcie jest stworzenie modelu środowiska, który będzie przewidywał długość złowionych śledzi. W pierwszym kroku, ze zbioru danych eliminowany jest atrybut określający chronologię, a następnie zbiór jest dzielony na część treningową i testową.
+
+##Zbiór treningowy i testowy
+```{r, removeExtraColumn}
+regressionHerrings <- subset(completeHerrings, select = -Połów)
+ ```
+
+```{r, datasetSplit}
+inTraining <- createDataPartition(y = regressionHerrings$Długość, 
+                                  p = .70, 
+                                  list = FALSE)
+trainingHerrings <- regressionHerrings[inTraining, ]
+testingHerrings <- regressionHerrings[-inTraining, ]
+```
+
+##Konfiguracja
+
+Proces uczenia odbywa się w ramach walidacji krzyżowej, w której zbiór treningowy dzielony jest na cztery części. Następnie określane są parametry wymagające strojenia.
+
+```{r, regressionParamsAndConfig}
+ctrl <- trainControl(method = "cv", number = 4)
+paramsGrid <- expand.grid(n.trees=c(200, 300, 400), 
+                          interaction.depth = 5:10, 
+                          shrinkage=c(0.1, 0.2, 0.5), 
+                          n.minobsinnode=c(5))
+```
+
+##Uczenie
+
+Regresor tworzony jest algorytmem *Stochastic Gradient Boosting*.
+
+```{r, regression, results='hide', cache=TRUE}
+fit <- train(Długość ~ .,
+             data = trainingHerrings,
+             method = "gbm",
+             trControl = ctrl,
+             tuneGrid=paramsGrid)
+```
+
+##Jakość predykcji
+
+```{r, regressionFir, echo=FALSE}
+predictionHerring <- predict(fit, newdata = testingHerrings)
+
+SSE <- sum((testingHerrings$Długość - predictionHerring) ^ 2)
+SST <- sum((testingHerrings$Długość - mean(testingHerrings$Długość)) ^ 2)
+rsquared <- 1 - SSE/SST
+rmse <- sqrt( mean( (testingHerrings$Długość-predictionHerring)^2))
+```
+Na zbiorze testowym algorytm osiąga miarę R² równą `r round(rsquared, digits=2)` oraz RMSE na poziomie `r round(rmse, digits=2)` cm. Wyniki te pochodzą z dostrojenia parametrów do poniższych wartości:
+
+```{r, regressionInfo, echo=FALSE}
+kable(fit$bestTune)
+```
+
+##Kluczowe atrybuty
+
+Ostatnim etapem analizy jest identyfikacja tych atrybutów, które mają największe znaczenie przy przewidywaniu długości śledzia. Poniższa lista prezentuje wszystkie atrybuty wraz ze znormalizowaną miarą ich znaczenia. Zdecydowanym liderem jest tutaj temperatura na powierzchni oceanu.
+
+```{r, variableImportance, echo=FALSE}
+varImp(fit)
+```
+
+Wykres poniżej prezentuje jak bardzo zmiany w długości śledzi są skorelowane w czasie ze zmianami temperatury wody.
+
+```{r, variableImportancePlot, cache=TRUE, echo=FALSE}
+finalComparison <- subset(completeHerrings, select = c(Połów, Długość, `Temperatura powierzchni oceanu [°C]`))
+finalComparisonMelt <- melt(finalComparison, id.vars = 'Połów')
+ggplot(finalComparisonMelt, aes(x=Połów, y=value)) + 
+    geom_smooth() + 
+    facet_wrap(~variable, scales="free", ncol = 1) +
+    theme_light()
+```
+
+
