@@ -4,14 +4,13 @@ author: "Jakub Guner"
 date: "23 Nov 2016"
 output: 
   html_document:
-    css: custom.css
+    number_sections: yes
+    toc_float: yes
     toc: yes
 ---
-## Ustawienia
-```{r setup, include=FALSE}
+# Ustawienia
+```{r setup, include=FALSE, echo=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, fig.align="center")
-Sys.setlocale("LC_CTYPE","pl_PL")
-set.seed(92)
 ```
 
 ```{r setupLocale, results='hide'}
@@ -32,13 +31,13 @@ library(lattice)
 library(mice)
 library(reshape2)
 ```
-## Wstęp
+# Wprowadzenie
 
 ```{r readData}
 herrings <-read.csv("sledzie.csv", na.strings = "?")
 ```
 
-```{r plotLength, echo=FALSE}
+```{r plotLength, echo=FALSE, fig.align='center'}
 lengthPlot <- ggplot(herrings, aes(x=X, y=length)) + 
               geom_smooth() + 
               theme_light() + 
@@ -47,19 +46,31 @@ lengthPlot <- ggplot(herrings, aes(x=X, y=length)) +
 ggplotly(lengthPlot)
 ```
 
-## Brakujące dane
+#Wstępne przetwarzanie danych
+##Brakujące dane
 
 Na żadnym atrybucie nie brakuje więcej niż 5% wartości, brak podstaw do odrzucenia czy ponownego pomiaru na którymkolwiek atrybucie.
 
-```{r percentageMissing}
-percentageMissing <- function(x){sum(is.na(x))/length(x)*100}
+```{r percentageMissing, echo=FALSE}
+percentageMissing <- function(x){
+  result <- sum(is.na(x))/length(x)*100
+  paste(round(result, digits = 2), "%")
+}
 kable(t(apply(herrings,2,percentageMissing)))
 ```
 
 Brakujące wartości występują na siedmiu atrybutach. Rozkład losowy. Zdecydowaną większość stanowią wiersze w której brakuje tylko jednej wartości.
 
-```{r patternOfNAs, message=FALSE, warning=FALSE}
-aggr(herrings, col=c('green', 'red'), numbers=TRUE, sortVars=TRUE, labels=names(herrings), bars=TRUE, prop=FALSE, combined=TRUE, only.miss=TRUE, ylabs="Kombinacje brakujących wartości")
+```{r patternOfNAs, message=FALSE, warning=FALSE, echo=FALSE, results='hide'}
+aggr(herrings, col=c('green', 'red'), 
+     numbers=TRUE, 
+     sortVars=TRUE, 
+     labels=names(herrings), 
+     bars=TRUE, 
+     prop=FALSE, 
+     combined=TRUE, 
+     only.miss=TRUE, 
+     ylabs="Kombinacje brakujących wartości")
 ```
 
 Imputujemy wartości przy użyciu pakietu MICE. Wykresy gęstości, oryginalne dane na niebiesko, wstawione na czerwono. Okazuje się, że w większości przypadków brakujące wartości pochodziły z wąskiego zakresu => brak wartości nie był przypadkowy i zaszedł w tylko w określonych warunkach połowu. 
@@ -69,18 +80,80 @@ Imputujemy wartości przy użyciu pakietu MICE. Wykresy gęstości, oryginalne d
 ```{r fillingNAs, message=FALSE, warning=FALSE, cache=TRUE, results='hide'}
 imputedHerrings <- mice(herrings, m=1, method = "mean", seed= 29, print=FALSE)
 densityplot(imputedHerrings)
+
 ```
 
-Tworzymy nową kolekcję danych, już uzupełnioną o brakujące wartości. Ostatnim etapem jest nadanie nowych, czytelnych nazw kolumnom.
 
+Tworzymy nową kolekcję danych, już uzupełnioną o brakujące wartości. 
 ```{r completeHerringsDataset, message=FALSE, warning=FALSE, cache=TRUE}
 completeHerrings <- complete(imputedHerrings, 1)
-colnames(completeHerrings) <- c("Połów", "Długość", "Calanus finmarchicus gatunek 1", "Calanus finmarchicus gatunek 2", "Calanus helgolandicus gatunek 1", "Calanus helgolandicus gatunek 2","Widłonogi gatunek 1","Widłonogi gatunek 2","Żywy narybek w czasie połowu","Złowione śledzie w skali roku","Żywy narybek w skali roku","Złowione śledzie w czasie połowu", "Temperatura powierzchni oceanu [°C]", "Zasolenie wody [‰]", "Miesiąc", "NAO")
 ```
 
-## Zbiór danych
-### Rozkład wartości atrybutów
-```{r attrDistri, fig.height=20}
+##Korelacje pomiędzy atrybutami
+Korelacja pearsona - defaultowa
+
+```{r correlations, echo=FALSE, fig.width=7, fig.height=7}
+reorder_correlationMatrix <- function(matrix){
+  # Use correlation between variables as distance
+  dd <- as.dist((1-matrix)/2)
+  hc <- hclust(dd)
+  matrix <-matrix[hc$order, hc$order]
+}
+
+get_lower_triangle<-function(cormat){
+    cormat[upper.tri(cormat)] <- NA
+    return(cormat)
+}
+
+correlationMatrix <- cor(completeHerrings)
+correlationMatrix <- reorder_correlationMatrix(correlationMatrix)
+upperTriangleMatrix <-get_lower_triangle(correlationMatrix)
+meltedCorrelation <- melt(upperTriangleMatrix)
+
+# ggplot(data = meltedCorrelation, aes(x=Var1, y=Var2, fill=value)) +
+#   scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0, limit = c(-1,1), 
+#                          space = "Lab", name="Pearson\nCorrelation") + 
+#   geom_text(aes(Var1, Var2, label = round(value, digits = 2)), color = "black", size = 3) + 
+#   theme_light() + 
+#   geom_tile(color="white") + 
+#   theme(axis.title.x = element_blank(), axis.title.y = element_blank()) 
+ggplot(data = meltedCorrelation, aes(x=Var1, y=Var2, fill=value)) + geom_tile(color="white") + scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0, limit = c(-1,1), space = "Lab", name="Pearson\nCorrelation") + theme_light() + theme(axis.title.x = element_blank(), axis.title.y = element_blank(), legend.position="top",legend.direction = "horizontal") + geom_text(aes(Var1, Var2, label = round(value, digits = 2)), color = "black", size = 3)
+  
+```
+
+Na tej podstawie usuwamy chel1(lcop1), chel2 (silna korelacja z lcop2), fbar(cumf)
+
+##Nazwy atrybutów
+```{r, removeCorrelatedColumns}
+completeHerrings <- subset(completeHerrings, select = -c(chel1,chel2, fbar))
+```
+
+Ostatnim etapem jest nadanie nowych, czytelnych nazw kolumnom.
+TODO: Remove names of removed columns
+```{r newColumnNames, message=FALSE, warning=FALSE, cache=TRUE}
+colnames(completeHerrings) <- c("Połów", 
+                                "Długość", 
+                                "Calanus finmarchicus gatunek 1", 
+                                "Calanus finmarchicus gatunek 2", 
+                                "Widłonogi gatunek 1",
+                                "Widłonogi gatunek 2",
+                                "Złowione śledzie w skali roku",
+                                "Żywy narybek w skali roku",
+                                "Złowione śledzie w czasie połowu", 
+                                "Temperatura powierzchni oceanu [°C]", 
+                                "Zasolenie wody [‰]", 
+                                "Miesiąc", 
+                                "NAO")
+```
+
+# Zbiór danych
+Zbiór zawiera 52582 obserwacje. 13 zmiennych. 
+<!-- Przykładowe rokordy -->
+<!-- ```{r headCompleteHerrings, echo=FALSE} -->
+<!-- head(completeHerrings) -->
+<!-- ``` -->
+## Rozkład wartości atrybutów
+```{r attrDistri, fig.height=20, echo=FALSE}
 d <- melt(completeHerrings[-c(1)])
 ggplot(d, aes(x=value)) + 
   facet_wrap(~variable, scales = "free", ncol = 2) + 
@@ -88,8 +161,4 @@ ggplot(d, aes(x=value)) +
   ylab("Gęstość wartości") +
   xlab("Zmienna") +
   theme_light()
-```
-
-```{r summary}
-kable(summary(completeHerrings))
 ```
